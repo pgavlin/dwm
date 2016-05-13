@@ -168,8 +168,10 @@ static void enternotify(XEvent *e);
 static void expose(XEvent *e);
 static void focus(Client *c);
 static void focusin(XEvent *e);
+static void focusmaster(const Arg *arg);
 static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
+static char *getexepath(void);
 static int getrootptr(int *x, int *y);
 static long getstate(Window w);
 static int gettextprop(Window w, Atom atom, char *text, unsigned int size);
@@ -193,6 +195,7 @@ static void resize(Client *c, int x, int y, int w, int h, int interact);
 static void resizeclient(Client *c, int x, int y, int w, int h);
 static void resizemouse(const Arg *arg);
 static void restack(Monitor *m);
+static void restart(const Arg *arg);
 static void run(void);
 static void scan(void);
 static int sendevent(Client *c, Atom proto);
@@ -833,6 +836,20 @@ focusin(XEvent *e)
 }
 
 void
+focusmaster(const Arg *arg)
+{
+    Client *c = NULL;
+
+    if (!selmon->sel)
+        return;
+    for (c = selmon->clients; c && !ISVISIBLE(c); c = c->next);
+    if (c) {
+        focus(c);
+        restack(selmon);
+    }
+}
+
+void
 focusmon(const Arg *arg)
 {
 	Monitor *m;
@@ -887,6 +904,27 @@ getatomprop(Client *c, Atom prop)
 		XFree(p);
 	}
 	return atom;
+}
+
+char *
+getexepath(void)
+{
+	ssize_t r, length;
+	char *path = NULL;
+
+	for (length = 256, r = 512; r >= length; length += 32) {
+		if (path != NULL)
+			free(path);
+		path = malloc(sizeof(char) * length);
+		r = readlink("/proc/self/exe", path, length);
+	} while (r >= length);
+
+	if (r == -1) {
+		perror("readlink:");
+		return NULL;
+	}
+
+	return path;
 }
 
 int
@@ -1392,12 +1430,18 @@ restack(Monitor *m)
 }
 
 void
+restart(const Arg *arg)
+{
+	running = -1;
+}
+
+void
 run(void)
 {
 	XEvent ev;
 	/* main event loop */
 	XSync(dpy, False);
-	while (running && !XNextEvent(dpy, &ev))
+	while (running > 0 && !XNextEvent(dpy, &ev))
 		if (handler[ev.type])
 			handler[ev.type](&ev); /* call handler */
 }
@@ -2136,11 +2180,17 @@ main(int argc, char *argv[])
 		fputs("warning: no locale support\n", stderr);
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("dwm: cannot open display\n");
+	argv[0] = getexepath();
 	checkotherwm();
 	setup();
 	scan();
-	run();
+	do {
+        running = 1;
+		run();
+	} while (running < 0 && argv[0] == NULL);
 	cleanup();
 	XCloseDisplay(dpy);
+	if (running < 0)
+		execv(argv[0], argv);
 	return EXIT_SUCCESS;
 }
