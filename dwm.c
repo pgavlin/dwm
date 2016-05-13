@@ -126,6 +126,7 @@ struct Monitor {
 	int topbar;
 	Client *clients;
 	Client *sel;
+    Client *lastsel;
 	Client *stack;
 	Monitor *next;
 	Window barwin;
@@ -692,6 +693,10 @@ detachstack(Client *c)
 		for (t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
 		c->mon->sel = t;
 	}
+    if (c == c->mon->lastsel) {
+        for (t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
+        c->mon->lastsel = t;
+    }
 }
 
 Monitor *
@@ -838,15 +843,19 @@ focusin(XEvent *e)
 void
 focusmaster(const Arg *arg)
 {
-    Client *c = NULL;
+    Client* c;
 
     if (!selmon->sel)
         return;
-    for (c = selmon->clients; c && !ISVISIBLE(c); c = c->next);
-    if (c) {
-        focus(c);
-        restack(selmon);
+    if (!selmon->lastsel) {
+        selmon->lastsel = selmon->sel;
+        return;
     }
+
+    c = selmon->lastsel;
+    selmon->lastsel = selmon->sel;
+    focus(c);
+    restack(selmon);
 }
 
 void
