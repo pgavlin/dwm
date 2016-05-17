@@ -62,7 +62,8 @@ enum { CurNormal, CurResize, CurMove, CurLast }; /* cursor */
 enum { SchemeNorm, SchemeSel, SchemeLast }; /* color schemes */
 enum { NetSupported, NetWMName, NetWMState,
        NetWMFullscreen, NetActiveWindow, NetWMWindowType,
-       NetWMWindowTypeDialog, NetClientList, NetLast }; /* EWMH atoms */
+       NetWMWindowTypeDialog, NetClientList, NetNumberOfDesktops,
+       NetCurrentDesktop, NetWorkArea, NetLast }; /* EWMH atoms */
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast }; /* default atoms */
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast }; /* clicks */
@@ -230,6 +231,7 @@ static void updatesizehints(Client *c);
 static void updatestatus(void);
 static void updatewindowtype(Client *c);
 static void updatetitle(Client *c);
+static void updateworkarea(void);
 static void updatewmhints(Client *c);
 static void view(const Arg *arg);
 static Client *wintoclient(Window w);
@@ -582,6 +584,7 @@ configurenotify(XEvent *e)
 		if (updategeom() || dirty) {
 			drw_resize(drw, sw, bh);
 			updatebars();
+			updateworkarea();
 			for (m = mons; m; m = m->next) {
 				for (c = m->clients; c; c = c->next)
 					if (c->isfullscreen)
@@ -870,6 +873,11 @@ focusmon(const Arg *arg)
 		return;
 	unfocus(selmon->sel, 0); /* s/1/0/ fixes input focus issues
 					in gedit and anjuta */
+
+	long n = (long)m->num;
+	XChangeProperty(dpy, root, netatom[NetCurrentDesktop], XA_CARDINAL, 32,
+		PropModeReplace, (unsigned char *)&n, 1);
+
 	selmon = m;
 	focus(NULL);
 }
@@ -1672,6 +1680,9 @@ setup(void)
 	netatom[NetWMWindowType] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
 	netatom[NetWMWindowTypeDialog] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
 	netatom[NetClientList] = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+	netatom[NetNumberOfDesktops] = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
+	netatom[NetCurrentDesktop] = XInternAtom(dpy, "_NET_CURRENT_DESKTOP", False);
+	netatom[NetWorkArea] = XInternAtom(dpy, "_NET_WORKAREA", False);
 	/* init cursors */
 	cursor[CurNormal] = drw_cur_create(drw, XC_left_ptr);
 	cursor[CurResize] = drw_cur_create(drw, XC_sizing);
@@ -1690,6 +1701,7 @@ setup(void)
 	XChangeProperty(dpy, root, netatom[NetSupported], XA_ATOM, 32,
 			PropModeReplace, (unsigned char *) netatom, NetLast);
 	XDeleteProperty(dpy, root, netatom[NetClientList]);
+	updateworkarea();
 	/* select for events */
 	wa.cursor = cursor[CurNormal]->cursor;
 	wa.event_mask = SubstructureRedirectMask|SubstructureNotifyMask|ButtonPressMask|PointerMotionMask
@@ -2104,6 +2116,40 @@ updatewindowtype(Client *c)
 		setfullscreen(c, 1);
 	if (wtype == netatom[NetWMWindowTypeDialog])
 		c->isfloating = 1;
+}
+
+void
+updateworkarea(void)
+{
+	Monitor *m;
+	long mn;
+	long *workarea;
+	int n, i;
+
+	for (n = 0, m = mons; m; m = m->next, n++);
+
+	XChangeProperty(dpy, root, netatom[NetNumberOfDesktops], XA_CARDINAL, 32,
+		PropModeReplace, (unsigned char *)&n, 1);
+
+	if (selmon) {
+		mn = selmon->num;
+		XChangeProperty(dpy, root, netatom[NetCurrentDesktop], XA_CARDINAL, 32,
+			PropModeReplace, (unsigned char *)&mn, 1);
+	}
+
+	workarea = malloc(n * 4 * sizeof(long));
+
+	for (i = 0, m = mons; m; m = m->next, i += 4) {
+		workarea[i] = m->mx;
+		workarea[i + 1] = m->by + bh;
+		workarea[i + 2] = m->mw;
+		workarea[i + 3] = m->mh - bh;
+	}
+
+	XChangeProperty(dpy, root, netatom[NetWorkArea], XA_CARDINAL, 32,
+		PropModeReplace, (unsigned char *)workarea, n * 4);
+
+	free(workarea);
 }
 
 void
