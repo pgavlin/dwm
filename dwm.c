@@ -126,7 +126,7 @@ struct Monitor {
 	int topbar;
 	Client *clients;
 	Client *sel;
-    Client *lastsel;
+	Client *lastsel;
 	Client *stack;
 	Monitor *next;
 	Window barwin;
@@ -185,6 +185,7 @@ static void manage(Window w, XWindowAttributes *wa);
 static void mappingnotify(XEvent *e);
 static void maprequest(XEvent *e);
 static void monocle(Monitor *m);
+static void monotile(Monitor *m);
 static void motionnotify(XEvent *e);
 static void movemouse(const Arg *arg);
 static Client *nexttiled(Client *c);
@@ -693,10 +694,10 @@ detachstack(Client *c)
 		for (t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
 		c->mon->sel = t;
 	}
-    if (c == c->mon->lastsel) {
-        for (t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
-        c->mon->lastsel = t;
-    }
+	if (c == c->mon->lastsel) {
+		for (t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
+		c->mon->lastsel = t;
+	}
 }
 
 Monitor *
@@ -843,19 +844,19 @@ focusin(XEvent *e)
 void
 focusmaster(const Arg *arg)
 {
-    Client* c;
+	Client* c;
 
-    if (!selmon->sel)
-        return;
-    if (!selmon->lastsel) {
-        selmon->lastsel = selmon->sel;
-        return;
-    }
+	if (!selmon->sel)
+		return;
+	if (!selmon->lastsel) {
+		selmon->lastsel = selmon->sel;
+		return;
+	}
 
-    c = selmon->lastsel;
-    selmon->lastsel = selmon->sel;
-    focus(c);
-    restack(selmon);
+	c = selmon->lastsel;
+	selmon->lastsel = selmon->sel;
+	focus(c);
+	restack(selmon);
 }
 
 void
@@ -1179,6 +1180,44 @@ monocle(Monitor *m)
 		snprintf(m->ltsymbol, sizeof m->ltsymbol, "[%d]", n);
 	for (c = nexttiled(m->clients); c; c = nexttiled(c->next))
 		resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, 0);
+}
+
+void
+monotile(Monitor *m)
+{
+	unsigned int i, n, mw;
+	Client *c, *master, *other;
+
+	for (n = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), n++);
+	if (n == 0)
+		return;
+
+    snprintf(m->ltsymbol, sizeof m->ltsymbol, "[]%d", n - m->nmaster);
+
+	if (n > 1)
+		mw = m->nmaster ? m->ww * m->mfact : 0;
+	else
+		mw = m->ww;
+
+	for (i = 0, master = NULL, other = NULL, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++)
+		if (i < m->nmaster) {
+			if (c == m->sel || (c == m->lastsel && !master))
+				master = c;
+		} else {
+			if (c == m->sel || (c == m->lastsel && !other))
+				other = c;
+		}
+
+	for (i = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++)
+		if (i < m->nmaster) {
+			if (!master)
+				master = c;
+			resize(c, m->wx, m->wy, mw - (2*c->bw), m->wh - (2*c->bw), 0);
+		} else {
+			if (!other)
+				other = c;
+			resize(c, m->wx + mw, m->wy, m->ww - mw - (2*c->bw), m->wh - (2*c->bw), 0);
+		}
 }
 
 void
@@ -2194,7 +2233,7 @@ main(int argc, char *argv[])
 	setup();
 	scan();
 	do {
-        running = 1;
+		running = 1;
 		run();
 	} while (running < 0 && argv[0] == NULL);
 	cleanup();
